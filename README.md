@@ -1,6 +1,6 @@
 # Minesweeper minimum clicks
 
-This project contains an exact minesweeper minimum-clicks solver, as well as 3 community heuristics: HZiNi, LZini, and 8-Way Zini.
+This project contains an exact minesweeper minimum-clicks solver, as well as 3 community heuristics: HZiNi, LZiNi, and 8-Way ZiNi.
 
 The solver is a standalone C++20 program with no requirements, that can optionally compile to WebAssembly for use in web applications.
 
@@ -92,7 +92,7 @@ We make heavy use of the **chord set** concept, which states that a solution to 
 | Chords | One per chosen tile |
 | Flags | One per mine adjacent to any chosen tile |
 | Chain starts | One per connected component of chords |
-| Remaining 3BV | One per target neither chosen as a center nor adjacent to a chosen center ("cleanup clicks")|
+| Remaining 3BV | One per target neither chosen as a chord nor adjacent to a chosen chord ("cleanup clicks")|
 
 Let `C` be the set of chorded tiles. Write:
 
@@ -104,24 +104,25 @@ The solver minimizes this expression over all choices C:
 
 ```text
 cost(C) = |C| +   |M(C)| + k(C) +   |U(C)|
-          chords  flags    starts   remaining openings
+          chords  flags    starts   remaining 3BV
 ```
 
 Choosing no chords gives `cost({}) = 3BV`.
 
-This makes the problem similar to **minimum set cover**, with extra complexity, and structure induced by its minesweeper origins. As such, an exact polynomial-time algorithm is unlikely (albeit not formally proven impossible). Naively enumerating all chord sets is exponential in the number of tiles, which even on beginner board can greatly exceed computational limits. Polynomial-time heuristics do exist, improving greedy approaches slightly. Our algorithm uses row/column-sweep DP to quickly and exactly solve the min-clicks problem on all 3 standard board sizes in `O(max(w, h) * 2^min(w, h))`.
+This makes the problem similar to **minimum set cover**, with extra complexity, and structure induced by its minesweeper origins. As such, an exact polynomial-time algorithm is unlikely (albeit not formally proven impossible). Naively enumerating all chord sets is exponential in the number of tiles, which even on beginner boards can greatly exceed computational limits. Polynomial-time heuristics do exist, improving greedy approaches slightly. Our algorithm uses row/column-sweep DP to quickly and exactly solve the min-clicks problem on all 3 standard board sizes in `O(max(w, h) * 2^min(w, h))`.
 
 ## Dynamic Programming (DP)
 
 Consider processing candidates from left to right. After deciding about the left side, most details far behind us no longer affect the right side. What matters is the information that still crosses the boundary. This allows for a great reduction of the search space.
 
-**Dynamic programming**, abbreviated **DP**, is the systematic use of this idea: solve a sequence of partial problems, store a summary of each distinct situation, and retain the cheapest way of reaching that situation. To implement this, we'll first defined a few key terms.
+**Dynamic programming**, abbreviated **DP**, is the systematic use of this idea: solve a sequence of partial problems, store a summary of each distinct situation, and retain the cheapest way of reaching that situation. To implement this, we'll first define a few key terms.
 
 ### Factors and Factor Bits
 
 A **factor** is one small cost rule depending on a particular set of candidate decisions, called its **scope**.
 
 A mine factor says: “Charge one flag if at least one of the neighboring candidates is in `C`.” 
+
 A target factor says: “Charge one click if none of the candidates covering this target is in `C`.” 
 
 A target's covering candidates are its own center and adjacent number tiles. Logically, "at least one" translates to **OR**. Thus, a mine factor contributes `OR(scope)` to the cost, while a target factor contributes `NOR(scope)` to the cost. This is efficiently implemented by a **factor bit**, which remembers the answer to "has any
@@ -212,11 +213,11 @@ Within a single layer, the solver plans the order in which candidates are consid
 
 ### More succint descriptions of boundaries
 
-Suppose chords A and B belong to one component. A touches future candidates `{p, q}`, while B touches only `{q}`. B carries no extra future information and its label can be removed. More generally, by labelling components rather than chords, we increase the amount of equivalences we manage to catch, reducing the state space.
+Suppose chords A and B belong to one component. A touches future candidates `{p, q}`, while B touches only `{q}`. B carries no extra future information and its label can be removed. More generally, by describing components more succintly, we increase the amount of equivalences we manage to catch, reducing the state space.
 
 ### Pruning states that are always worse
 
-This improvement compares states with the same connectivity but different factor bits. First, the solver changes when mines are charged: it charges a mine factor when first used, retaining its bit to prevent charging it again. This makes a set bits a "credit" for both kinds of factor: a mine already paid for, or a target already covered.
+This improvement compares states with the same connectivity but different factor bits. First, the solver changes when mines are charged: it charges a mine factor when first used, retaining its bit to prevent charging it again. This makes a set bit a "credit" for both types of factor: a mine already paid for, or a target already covered.
 
 Let `b(A)` denote state A's set bits, and `c(A)` its charged cost. Relative to state B, A can lose at most the total weight of the credits that B has and A lacks:
 
@@ -250,3 +251,6 @@ The solver can handle every beginner, intermediate and expert board tested. Appr
 | Intermediate | ~25/s | ~12500/s | ~4000/s |
 | Expert | ~3/s | ~5000/s | ~1250/s |
 
+### Limits
+
+Despite optimizations, the solver has exponential complexity. It is optimized to run on fully connected expert (16-tall) boards, so running it on boards whose smallest dimension exceeds that gets increasingly impractical. Empirically, for fully connected boards, that practicality limit sits around 20~22. Larger boards can still run, provided their density is low enough to allow many zeros.
