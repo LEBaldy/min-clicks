@@ -188,6 +188,8 @@ Several aspects of the problem can be simplified exactly. These reductions mostl
 
 **Candidate dominance**: If a candidate is strictly worse than another candidate in terms of coverage and cost, it can be safely ignored.
 
+**Pair constraints**: For some pairs of candidates, it can be proven that no optimal solution is required to include both. The solver remembers these constraints so they can be applied if one of the candidates is chosen.
+
 **Redundant edges**: Two adjacent tiles touching the same zero island are already connected through it. Removing the base edge does not affect connectivity and may allow connectivity items to expire earlier.
 
 **Repeated factors**: Factors that share a scope are combined into a single weighted factor. Opposite costs with identical scopes cancel:
@@ -252,10 +254,11 @@ The solver can handle every beginner, intermediate and expert board tested. Appr
 | Board size | Approximate throughput (optimal) | Approximate throughput (8-way) | Approximate throughput (LZiNi/HZiNi) |
 | --- | --- | --- | --- |
 | Beginner | ~1000/s | ~50000/s | ~15000/s |
-| Intermediate | ~25/s | ~12500/s | ~4000/s |
-| Expert | ~3/s | ~5000/s | ~1250/s |
+| Intermediate | ~50/s | ~12500/s | ~4000/s |
+| Expert | ~10/s | ~5000/s | ~1250/s |
+| Evil | ~2/s | - | - |
 
-These values are only indicative, and will vary by CPU and test conditions. Use them as an order-of-magnitude reference only.
+These values are only indicative, and will vary by CPU and test conditions. Use them as an order-of-magnitude reference only. Evil boards in particular are subject to variability in the quality of the scheduling.
 
 ### Limits
 

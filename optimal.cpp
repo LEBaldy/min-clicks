@@ -7,10 +7,9 @@
 #include <iostream>
 #include <limits>
 #include <stdexcept>
-
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
-
+// clang-format off
 EM_JS(void, browser_progress,
       (const char *phase, int completed, int total, double states, double peak,
        int best, double elapsed, double transitions),
@@ -31,14 +30,13 @@ EM_JS(void, browser_progress,
       });
 // clang-format on
 #endif
-
+using namespace std;
 using namespace minclicks;
-
 #ifdef __EMSCRIPTEN__
 // Short batches let generation yield to worker cancellation messages.
 extern "C" EMSCRIPTEN_KEEPALIVE const char *web_generate(
     int width, int height, int mines, int minBV, int maxBV,
-    uint32_t seedLow, uint32_t seedHigh) {
+    uint32_t seedLow, uint32_t seedHigh, double minEff) {
     static string response;
     if (width < 1 || width > 99 || height < 1 || height > 99 ||
         mines < 0 || mines > width * height || minBV < 0 ||
@@ -46,53 +44,62 @@ extern "C" EMSCRIPTEN_KEEPALIVE const char *web_generate(
         return "{\"error\":\"Invalid generation parameters.\"}";
     try {
         uint64_t seed = (uint64_t(seedHigh) << 32) | seedLow;
-        auto began = std::chrono::steady_clock::now();
+        auto began = chrono::steady_clock::now();
         int attempts = 0;
+        double maxEff = -1; // percent; -1 when no board reached the 8-way stage
+        auto stats = [&]() {
+            string s = "{\"attempts\":" + to_string(attempts);
+            if (maxEff >= 0) s += ",\"maxEff\":" + to_string(maxEff);
+            return s;
+        };
         do {
             auto board = randomBoard64(width, height, mines, seed++);
             ++attempts;
-            if (board.bv() >= minBV && board.bv() <= maxBV) {
-                response = "{\"attempts\":" + to_string(attempts) +
-                           ",\"url\":\"" + board.url() + "\"}";
-                return response.c_str();
+            int bv = board.bv();
+            if (bv < minBV || bv > maxBV) continue;
+            if (minEff > 0) {
+                int clicks = eightWayZiniClicks(board);
+                double eff = clicks > 0 ? 100.0 * bv / clicks : 0;
+                maxEff = max(maxEff, eff);
+                if (eff < minEff - 1e-9) continue;
             }
-        } while (std::chrono::steady_clock::now() - began < std::chrono::milliseconds(25));
-        response = "{\"attempts\":" + to_string(attempts) + "}";
+            response = stats() + ",\"url\":\"" + board.url() + "\"}";
+            return response.c_str();
+        } while (chrono::steady_clock::now() - began < chrono::milliseconds(25));
+        response = stats() + "}";
         return response.c_str();
     } catch (const exception &) {
         return "{\"error\":\"Board generation failed.\"}";
     }
 }
 #endif
-
-static unsigned long long natural(const std::string &s) {
-    if (s.empty() || s.find_first_not_of("0123456789") != std::string::npos)
-        throw std::runtime_error("Expected nonnegative integer: " + s);
-    return std::stoull(s);
+static unsigned long long natural(const string &s) {
+    if (s.empty() || s.find_first_not_of("0123456789") != string::npos)
+        throw runtime_error("Expected nonnegative integer: " + s);
+    return stoull(s);
 }
-
 int main(int argc, char **argv) {
     try {
         ExactOptions options;
-        std::string input, algorithm = "optimal";
+        string input, algorithm = "optimal";
         bool random = false, all = false, json = false, witness = false,
              random64 = false;
         int w = 0, h = 0, mines = 0;
         uint64_t seed = 0;
         for (int i = 1; i < argc; ++i) {
-            std::string a = argv[i];
+            string a = argv[i];
             auto arg = [&]() {
-                if (++i >= argc) throw std::runtime_error("Missing value for " + a);
-                return std::string(argv[i]);
+                if (++i >= argc) throw runtime_error("Missing value for " + a);
+                return string(argv[i]);
             };
             auto integer = [&]() {
                 auto v = natural(arg());
-                if (v > std::numeric_limits<int>::max())
-                    throw std::runtime_error("Integer out of range");
+                if (v > numeric_limits<int>::max())
+                    throw runtime_error("Integer out of range");
                 return int(v);
             };
             if (a == "--help") {
-                std::cout << "Usage: optimal URL [options]\n"
+                cout << "Usage: optimal URL [options]\n"
                      << "       optimal --random WIDTH HEIGHT MINES SEED [--64b] "
                         "[options]\n"
                      << "  --64b       Use mt19937_64 and a uint64 seed for random "
@@ -122,37 +129,36 @@ int main(int argc, char **argv) {
             else if (a == "--witness") witness = true;
             else if (a == "--max-states") {
                 auto n = natural(arg());
-                if (n > std::numeric_limits<size_t>::max())
-                    throw std::runtime_error("State limit out of range");
-                options.maxStates = std::size_t(n);
+                if (n > numeric_limits<size_t>::max())
+                    throw runtime_error("State limit out of range");
+                options.maxStates = size_t(n);
             } else if (a == "--time-limit") {
-                std::string v = arg();
-                std::size_t used;
-                options.timeLimit = std::stod(v, &used);
-                if (used != v.size() || !std::isfinite(options.timeLimit) ||
+                string v = arg();
+                size_t used;
+                options.timeLimit = stod(v, &used);
+                if (used != v.size() || !isfinite(options.timeLimit) ||
                     options.timeLimit < 0)
-                    throw std::runtime_error("Invalid time limit");
-            } else if (a.starts_with("--")) throw std::runtime_error("Unknown option: " + a);
+                    throw runtime_error("Invalid time limit");
+            } else if (a.starts_with("--")) throw runtime_error("Unknown option: " + a);
             else if (input.empty()) input = a;
-            else throw std::runtime_error("Unexpected argument: " + a);
+            else throw runtime_error("Unexpected argument: " + a);
         }
         if (algorithm != "optimal" && algorithm != "8way" && algorithm != "lzini" &&
             algorithm != "hzini")
-            throw std::runtime_error("Unknown algorithm: " + algorithm);
+            throw runtime_error("Unknown algorithm: " + algorithm);
         if (all && algorithm != "optimal")
-            throw std::runtime_error("Choose --all or --algorithm");
+            throw runtime_error("Choose --all or --algorithm");
         if (random == !input.empty())
-            throw std::runtime_error("Supply either a URL or --random; see --help");
-        if (random64 && !random) throw std::runtime_error("--64b requires --random");
+            throw runtime_error("Supply either a URL or --random; see --help");
+        if (random64 && !random) throw runtime_error("--64b requires --random");
         if (random && !random64 && seed > UINT32_MAX)
-            throw std::runtime_error("Seed out of range");
+            throw runtime_error("Seed out of range");
         if (!input.empty() && input.starts_with("b=")) input = "?" + input;
         Board b = random ? (random64 ? randomBoard64(w, h, mines, seed)
                                      : randomBoard(w, h, mines, uint32_t(seed)))
                          : decodeBoard(input);
         json = json || all;
         if (json) options.progress = false;
-
 #ifdef __EMSCRIPTEN__
         if (!json)
             options.onProgress = [](const Progress &p) {
@@ -161,7 +167,6 @@ int main(int argc, char **argv) {
                                  double(p.transitions));
             };
 #endif
-
         ExactResult exact;
         HeuristicResult heuristic;
         LegacyZiniResults legacy;
@@ -180,7 +185,7 @@ int main(int argc, char **argv) {
         bool isExact = all || algorithm == "optimal";
         const auto &actions = isExact ? exact.actions : heuristic.actions;
         if (json) {
-            std::cout << std::setprecision(9) << "{\"url\":\"" << b.url()
+            cout << setprecision(9) << "{\"url\":\"" << b.url()
                  << "\",\"width\":" << b.w << ",\"height\":" << b.h
                  << ",\"mines\":" << b.mineCount() << ",\"three_bv\":" << b.bv()
                  << ",\"status\":\""
@@ -188,51 +193,51 @@ int main(int argc, char **argv) {
                              : "heuristic")
                  << "\"";
             if (isExact)
-                std::cout << ",\"minclicks\":"
-                     << (exact.exact ? std::to_string(exact.clicks) : "null")
+                cout << ",\"minclicks\":"
+                     << (exact.exact ? to_string(exact.clicks) : "null")
                      << ",\"upper_bound\":" << exact.clicks
                      << ",\"peak_states\":" << exact.peak
                      << ",\"solve_seconds\":" << exact.elapsed;
             else
-                std::cout << ",\"algorithm\":\"" << algorithm
+                cout << ",\"algorithm\":\"" << algorithm
                      << "\",\"clicks\":" << heuristic.clicks;
             if (all)
-                std::cout << ",\"8way\":" << eight.clicks
+                cout << ",\"8way\":" << eight.clicks
                      << ",\"lzini\":" << legacy.lzini.clicks
                      << ",\"hzini\":" << legacy.hzini.clicks;
             if (witness) {
-                auto emit = [&](const std::vector<Action> &a) {
-                    std::cout << '[';
+                auto emit = [&](const vector<Action> &a) {
+                    cout << '[';
                     bool comma = false;
                     for (auto v : a) {
-                        if (comma) std::cout << ',';
+                        if (comma) cout << ',';
                         comma = true;
-                        std::cout << "[\"" << v.kind << "\"," << v.cell % b.w << ','
+                        cout << "[\"" << v.kind << "\"," << v.cell % b.w << ','
                              << v.cell / b.w << ']';
                     }
-                    std::cout << ']';
+                    cout << ']';
                 };
-                std::cout << ",\"actions\":";
+                cout << ",\"actions\":";
                 if (all) {
-                    std::cout << "{\"optimal\":";
+                    cout << "{\"optimal\":";
                     emit(actions);
-                    std::cout << ",\"8way\":";
+                    cout << ",\"8way\":";
                     emit(eight.actions);
-                    std::cout << ",\"lzini\":";
+                    cout << ",\"lzini\":";
                     emit(legacy.lzini.actions);
-                    std::cout << ",\"hzini\":";
+                    cout << ",\"hzini\":";
                     emit(legacy.hzini.actions);
-                    std::cout << '}';
+                    cout << '}';
                 } else emit(actions);
             }
-            std::cout << "}\n";
+            cout << "}\n";
         } else {
-            std::cout << "Board: " << b.w << 'x' << b.h << ", " << b.mineCount()
+            cout << "Board: " << b.w << 'x' << b.h << ", " << b.mineCount()
                  << " mines\nURL: " << b.url() << "\n3BV: " << b.bv() << '\n';
             if (isExact) {
                 const auto &r = exact;
                 const auto &c = r.breakdown;
-                std::cout << "Candidates: " << r.candidates << " (removed " << r.removed
+                cout << "Candidates: " << r.candidates << " (removed " << r.removed
                      << ")\nDP: " << r.order << "\nEngine: " << r.engine << '\n'
                      << "Status: "
                      << (r.exact ? "optimal" : "resource limit: " + r.reason) << '\n'
@@ -242,20 +247,21 @@ int main(int argc, char **argv) {
                      << c[2] << " chains + " << c[3] << " remaining 3BV\n"
                      << "Peak states: " << r.peak << "\nTransitions: " << r.transitions
                      << "\nCompleted candidates: " << r.completed << '/' << r.candidates
+                     << "\nMax connectivity: " << r.maxConn << ", max factors: " << r.maxFactors
                      << "\nFinal order: " << r.order << "\nSolve time: " << r.elapsed
                      << " seconds\nDominated states: " << r.dominated << '\n';
             } else
-                std::cout << "Algorithm: " << algorithm
+                cout << "Algorithm: " << algorithm
                      << "\nStatus: heuristic\nUpper bound clicks: " << heuristic.clicks
                      << '\n';
             if (witness)
                 for (auto a : actions)
-                    std::cout << "Action: " << a.kind << ' ' << a.cell % b.w << ' '
+                    cout << "Action: " << a.kind << ' ' << a.cell % b.w << ' '
                          << a.cell / b.w << '\n';
         }
         return isExact && !exact.exact ? 2 : 0;
-    } catch (const std::exception &e) {
-        std::cerr << "Error: " << e.what() << '\n';
+    } catch (const exception &e) {
+        cerr << "Error: " << e.what() << '\n';
         return 1;
     }
 }
