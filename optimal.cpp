@@ -298,7 +298,7 @@ int main(int argc, char **argv) {
             CSVResult csv_result;
             if (rng_load) {
                 if (b.load_rng_state(rng_load_filename)) {
-                    cout << "RNG state loaded successfully from '" << rng_save_filename << "'" << endl;
+                    cout << "RNG state loaded successfully from '" << rng_load_filename << "'" << endl;
                 } else {
                     throw runtime_error("Failed to load RNG or file was empty.\n");
                 }
