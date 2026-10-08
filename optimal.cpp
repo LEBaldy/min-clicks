@@ -16,11 +16,6 @@
 #include <vector>
 #include <string>
 
-/*
-Terminal build Command:
-    g++ -std=c++23 -O3 -DNDEBUG -march=native -I./include src/exact/*.cpp src/*.cpp *.cpp -o optimal
-*/
-
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 // clang-format off
@@ -142,22 +137,22 @@ int main(int argc, char **argv) {
                      << "  --64b       Use mt19937_64 and a uint64 seed for random "
                         "boards\n"
                      << "  --algorithm optimal|8way|lzini|hzini (default optimal)\n"
-                     << "  --all json|csv (default json)\n"
-                        "              All four algorithms, one JSON object/CSV output, no "
-                        "progress\n"
-                        "              Outputs to in terminal. Use --[format]-file to save file.\n"
+                     << "  --all       All four algorithms, one JSON object/CSV output, no progress\n"
+                        "              Outputs to in terminal.\n"
                      << "  --json      Machine-readable output for one algorithm\n"
-                     << "  --json-file [filename] (default 'output')\n"
+                     << "  --json-file FILENAME\n"
                         "              Saves machine-readable output for one algorithm to 'filename.json'\n"
                      << "  --csv       Table-readable output for one algorithm\n"
-                     << "  --csv-file [filename] (default 'output')\n"
+                     << "  --csv-file FILENAME\n"
                         "              Saves table-readable output for one algorithm to 'filename.csv'\n"
                      << "  --witness   Include actions (F flag, O open, C chord). Cannot be used with CSV.\n"
                      << "  --quiet     Suppress stderr and --randomruns progress\n"
                      << "  --time-limit SECONDS / --max-states N (default 0: "
                         "unlimited)\n"
-                     << "--rng-load filename Load the rng state from the filename.\n"
-                     << "--rng-save filename Save the rng state to the filename.\n"
+                     << "--rng-load FILENAME\n"
+                        "              Load the rng state from the filename.\n"
+                     << "--rng-save FILENAME\n"
+                        "              Save the rng state to the filename.\n"
                      << "Exit: 0 success, 2 exact search limited, 1 invalid "
                         "input/error.\n";
                 return 0;
@@ -248,7 +243,7 @@ int main(int argc, char **argv) {
             throw runtime_error("Seed out of range");
         }
         if (witness && csv) {
-            throw runtime_error("--witness outputs are not supported by CSV output.")
+            throw runtime_error("--witness outputs are not supported by CSV output.");
         }
         if (!input.empty() && input.starts_with("b=")) {
             input = "?" + input;
@@ -281,7 +276,10 @@ int main(int argc, char **argv) {
         {
             JSONResultWriter json_writer(output_filename);
             JSONResult json_result;
-            JSONMetadata json_metadata{runs, b.w, b.h, b.mineCount(), (random64 ? seed : uint32_t(seed))};
+            JSONMetadata json_metadata{runs, b.w, b.h, b.mineCount()};
+            if (!rng_load) {
+                json_metadata.initial_seed = random64 ? seed : uint32_t(seed);
+            }
             if (!isExact) {
                 json_metadata.algorithm = algorithm;
             }

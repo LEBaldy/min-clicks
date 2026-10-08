@@ -58,7 +58,7 @@ struct JSONMetadata {
   CoordType width;
   CoordType height;
   CellType mines;
-  uint64_t initial_seed;
+  std::optional<uint64_t> initial_seed;
   // not isExact
   std::optional<std::string> algorithm;
   std::optional<double> elapsed_time;
