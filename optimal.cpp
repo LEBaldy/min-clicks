@@ -100,15 +100,15 @@ inline double seconds(Clock::time_point start) {
 
 int main(int argc, char **argv) {
     try {
+        enum class Formats { DEFAULT, JSON, CSV };
+        Formats output_format = Formats::DEFAULT;
         ExactOptions options;
         string input, algorithm = "optimal";
-        string all_format = "json";
         string output_filename = "output";
         string rng_load_filename = "rng_state.txt";
         string rng_save_filename = "rng_state.txt";
-        bool random = false, all = false, json = false, csv = false, file = false,
-            witness = false, random64 = false, rng_save = false, rng_load = false,
-            progress = true;
+        bool random = false, all = false, file = false, witness = false, random64 = false,
+             rng_save = false, rng_load = false, progress = true;
         CoordType w = 0, h = 0;
         CellType mines = 0;
         int runs = 1;
@@ -175,17 +175,28 @@ int main(int argc, char **argv) {
                 algorithm = arg();
             } else if (a == "--all") {
                 all = true;
-                all_format = arg();
             } else if (a == "--json") {
-                json = true;
+                if (output_format != Formats::DEFAULT && output_format != Formats::JSON) {
+                    throw runtime_error("Please choose one output format.");
+                }
+                output_format = Formats::JSON;
             } else if (a == "--json-file") {
-                json = true;
+                if (output_format != Formats::DEFAULT && output_format != Formats::JSON) {
+                    throw runtime_error("Please choose one output format.");
+                }
+                output_format = Formats::JSON;
                 file = true;
                 output_filename = arg();
             } else if (a == "--csv") {
-                csv = true;
+                if (output_format != Formats::DEFAULT && output_format != Formats::CSV) {
+                    throw runtime_error("Please choose one output format.");
+                }
+                output_format = Formats::CSV;
             } else if (a == "--csv-file") {
-                csv = true;
+                if (output_format != Formats::DEFAULT && output_format != Formats::CSV) {
+                    throw runtime_error("Please choose one output format.");
+                }
+                output_format = Formats::CSV;
                 file = true;
                 output_filename = arg();
             } else if (a == "--quiet") {
@@ -230,9 +241,6 @@ int main(int argc, char **argv) {
         if (all && algorithm != "optimal") {
             throw runtime_error("Choose --all or --algorithm");
         }
-        if (!file && ((all && ((all_format != "csv" && csv) || (all_format != "json" && json))) || (csv && json))) {
-            throw runtime_error("Choose one output format when not saving to output file(s).");
-        }
         if (random == !input.empty()) {
             throw runtime_error("Supply either a URL or --random; see --help");
         }
@@ -242,7 +250,7 @@ int main(int argc, char **argv) {
         if (random && !random64 && seed > UINT32_MAX) {
             throw runtime_error("Seed out of range");
         }
-        if (witness && csv) {
+        if (witness && output_format == Formats::CSV) {
             throw runtime_error("--witness outputs are not supported by CSV output.");
         }
         if (!input.empty() && input.starts_with("b=")) {
@@ -253,10 +261,10 @@ int main(int argc, char **argv) {
         Board b = random ? (random64 ? randomBoard64(w, h, mines, seed)
                                      : randomBoard(w, h, mines, uint32_t(seed)))
                          : decodeBoard(input);
-        json = json || (all && all_format == "json");
-        csv = csv || (all && all_format == "csv");
-
-        if (json || csv) {
+        if (all && output_format == Formats::DEFAULT) {
+            output_format = Formats::JSON;
+        }
+        if (output_format != Formats::DEFAULT) {
             options.progress = false;
         }
 #ifdef __EMSCRIPTEN__
@@ -330,152 +338,156 @@ int main(int argc, char **argv) {
                 );
                 const auto &actions = isExact ? exact.actions : heuristic.actions;
                 auto start_output = Clock::now();
-                if (json) {
-                    if (!file) {
-                        // TODO: Fully Implement JSONResultWriter for Terminal output and update here
-                        cout << setprecision(9) << "{\"url\":\"" << b.url()
-                            << "\",\"width\":" << static_cast<unsigned>(b.w) << ",\"height\":" << static_cast<unsigned>(b.h)
-                            << ",\"mines\":" << b.mineCount() << ",\"three_bv\":" << b.bv()
-                            << ",\"status\":\"" << status << "\"";
-                        if (isExact) {
-                            cout << ",\"minclicks\":"
-                                << (exact.exact ? to_string(exact.clicks) : "null")
-                                << ",\"upper_bound\":" << exact.clicks
-                                << ",\"peak_states\":" << exact.peak
-                                << ",\"solve_seconds\":" << exact.elapsed;
-                        } else {
-                            cout << ",\"algorithm\":\"" << algorithm
-                                << "\",\"clicks\":" << heuristic.clicks;
-                        }
-                        if (all) {
-                            cout << ",\"8way\":" << eight.clicks
-                                << ",\"lzini\":" << legacy.lzini.clicks
-                                << ",\"hzini\":" << legacy.hzini.clicks;
-                        }
-                        if (witness) {
-                            auto emit = [&](const vector<Action> &a) {
-                                cout << '[';
-                                bool comma = false;
-                                for (auto v : a) {
-                                    if (comma) {
-                                        cout << ',';
-                                    }
-                                    comma = true;
-                                    cout << "[\"" << v.kind << "\"," << v.cell % b.w << ','
-                                        << v.cell / b.w << ']';
-                                }
-                                cout << ']';
-                            };
-                            cout << ",\"actions\":";
-                            if (all) {
-                                cout << "{\"optimal\":";
-                                emit(actions);
-                                cout << ",\"8way\":";
-                                emit(eight.actions);
-                                cout << ",\"lzini\":";
-                                emit(legacy.lzini.actions);
-                                cout << ",\"hzini\":";
-                                emit(legacy.hzini.actions);
-                                cout << '}';
-                            } else emit(actions);
-                        }
-                        cout << "}\n";
-                    } else {
-                        json_result.url = b.url();
-                        if (runs == 1) {
-                            json_result.width = b.w;
-                            json_result.height = b.h;
-                            json_result.mines = b.mineCount();
-                        }
-                        json_result.three_bv = b.bv();
-                        json_result.status = status;
-                        if (isExact) {
-                            json_result.minclicks = (exact.exact ? exact.clicks : 0);
-                            json_result.upper_bound = exact.clicks;
-                            json_result.peak_states = exact.peak;
-                            json_result.solve_seconds = exact.elapsed;
-                        } else {
-                            if (runs == 1) {
-                                json_result.algorithm = algorithm;
-                            }
-                            json_result.clicks = heuristic.clicks;
-                        }
-                        if (all) {
-                            json_result.eight_way = eight.clicks;
-                            json_result.lzini = legacy.lzini.clicks;
-                            json_result.hzini = legacy.hzini.clicks;
-                        }
-                        if (witness) {
-                            if (all) {
-                                AllActions expandedActions;
-                                ExpandedActionsConversion(actions, expandedActions.optimal);
-                                ExpandedActionsConversion(eight.actions, expandedActions.way8);
-                                ExpandedActionsConversion(legacy.lzini.actions, expandedActions.lzini);
-                                ExpandedActionsConversion(legacy.hzini.actions, expandedActions.hzini);
-                                json_result.actions = expandedActions;
+                switch (output_format) {
+                    case Formats::JSON:
+                        if (!file) {
+                            // TODO: Fully Implement JSONResultWriter for Terminal output and update here
+                            cout << setprecision(9) << "{\"url\":\"" << b.url()
+                                << "\",\"width\":" << static_cast<unsigned>(b.w) << ",\"height\":" << static_cast<unsigned>(b.h)
+                                << ",\"mines\":" << b.mineCount() << ",\"three_bv\":" << b.bv()
+                                << ",\"status\":\"" << status << "\"";
+                            if (isExact) {
+                                cout << ",\"minclicks\":"
+                                    << (exact.exact ? to_string(exact.clicks) : "null")
+                                    << ",\"upper_bound\":" << exact.clicks
+                                    << ",\"peak_states\":" << exact.peak
+                                    << ",\"solve_seconds\":" << exact.elapsed;
                             } else {
-                                SingleActions expandedActions;
-                                ExpandedActionsConversion(actions, expandedActions);
-                                json_result.actions = expandedActions;
+                                cout << ",\"algorithm\":\"" << algorithm
+                                    << "\",\"clicks\":" << heuristic.clicks;
+                            }
+                            if (all) {
+                                cout << ",\"8way\":" << eight.clicks
+                                    << ",\"lzini\":" << legacy.lzini.clicks
+                                    << ",\"hzini\":" << legacy.hzini.clicks;
+                            }
+                            if (witness) {
+                                auto emit = [&](const vector<Action> &a) {
+                                    cout << '[';
+                                    bool comma = false;
+                                    for (auto v : a) {
+                                        if (comma) {
+                                            cout << ',';
+                                        }
+                                        comma = true;
+                                        cout << "[\"" << v.kind << "\"," << v.cell % b.w << ','
+                                            << v.cell / b.w << ']';
+                                    }
+                                    cout << ']';
+                                };
+                                cout << ",\"actions\":";
+                                if (all) {
+                                    cout << "{\"optimal\":";
+                                    emit(actions);
+                                    cout << ",\"8way\":";
+                                    emit(eight.actions);
+                                    cout << ",\"lzini\":";
+                                    emit(legacy.lzini.actions);
+                                    cout << ",\"hzini\":";
+                                    emit(legacy.hzini.actions);
+                                    cout << '}';
+                                } else emit(actions);
+                            }
+                            cout << "}\n";
+                        } else {
+                            json_result.url = b.url();
+                            if (runs == 1) {
+                                json_result.width = b.w;
+                                json_result.height = b.h;
+                                json_result.mines = b.mineCount();
+                            }
+                            json_result.three_bv = b.bv();
+                            json_result.status = status;
+                            if (isExact) {
+                                json_result.minclicks = (exact.exact ? exact.clicks : 0);
+                                json_result.upper_bound = exact.clicks;
+                                json_result.peak_states = exact.peak;
+                                json_result.solve_seconds = exact.elapsed;
+                            } else {
+                                if (runs == 1) {
+                                    json_result.algorithm = algorithm;
+                                }
+                                json_result.clicks = heuristic.clicks;
+                            }
+                            if (all) {
+                                json_result.eight_way = eight.clicks;
+                                json_result.lzini = legacy.lzini.clicks;
+                                json_result.hzini = legacy.hzini.clicks;
+                            }
+                            if (witness) {
+                                if (all) {
+                                    AllActions expandedActions;
+                                    ExpandedActionsConversion(actions, expandedActions.optimal);
+                                    ExpandedActionsConversion(eight.actions, expandedActions.way8);
+                                    ExpandedActionsConversion(legacy.lzini.actions, expandedActions.lzini);
+                                    ExpandedActionsConversion(legacy.hzini.actions, expandedActions.hzini);
+                                    json_result.actions = expandedActions;
+                                } else {
+                                    SingleActions expandedActions;
+                                    ExpandedActionsConversion(actions, expandedActions);
+                                    json_result.actions = expandedActions;
+                                }
+                            }
+                            if (runs == 1) {
+                                json_writer.output_single(json_result);
+                            } else {
+                                json_writer.add_result(json_result);
                             }
                         }
-                        if (runs == 1) {
-                            json_writer.output_single(json_result);
+                        break;
+                    case Formats::CSV:
+                        csv_result.url = b.url();
+                        csv_result.width = b.w;
+                        csv_result.height = b.h;
+                        csv_result.mines = b.mineCount();
+                        csv_result.three_bv = b.bv();
+                        csv_result.status = status;
+                        if (isExact) {
+                            csv_result.minclicks = (exact.exact ? exact.clicks : 0);
+                            csv_result.upper_bound = exact.clicks;
+                            csv_result.peak_states = exact.peak;
+                            csv_result.solve_seconds = exact.elapsed;
                         } else {
-                            json_writer.add_result(json_result);
+                            csv_result.algorithm = algorithm;
+                            csv_result.clicks = heuristic.clicks;
                         }
-                    }
-                } else if (csv) {
-                    csv_result.url = b.url();
-                    csv_result.width = b.w;
-                    csv_result.height = b.h;
-                    csv_result.mines = b.mineCount();
-                    csv_result.three_bv = b.bv();
-                    csv_result.status = status;
-                    if (isExact) {
-                        csv_result.minclicks = (exact.exact ? exact.clicks : 0);
-                        csv_result.upper_bound = exact.clicks;
-                        csv_result.peak_states = exact.peak;
-                        csv_result.solve_seconds = exact.elapsed;
-                    } else {
-                        csv_result.algorithm = algorithm;
-                        csv_result.clicks = heuristic.clicks;
-                    }
-                    if (all) {
-                        csv_result.eight_way = eight.clicks;
-                        csv_result.lzini = legacy.lzini.clicks;
-                        csv_result.hzini = legacy.hzini.clicks;
-                    }
-                    csv_writer.add_result(csv_result);
-                } else {
-                    cout << "Board: " << static_cast<unsigned>(b.w) << 'x' << static_cast<unsigned>(b.h) << ", " << b.mineCount()
-                        << " mines\nURL: " << b.url() << "\n3BV: " << b.bv() << '\n';
-                    if (isExact) {
-                        const auto &r = exact;
-                        const auto &c = r.breakdown;
-                        cout << "Candidates: " << r.candidates << " (removed " << r.removed
-                            << ")\nDP: " << r.order << "\nEngine: " << r.engine << '\n'
-                            << "Status: "
-                            << (r.exact ? "optimal" : "resource limit: " + r.reason) << '\n'
-                            << (r.exact ? "Optimal clicks: " : "Upper bound clicks: ")
-                            << r.clicks << '\n'
-                            << "Breakdown: " << c[0] << " flags + " << c[1] << " chords + "
-                            << c[2] << " chains + " << c[3] << " remaining 3BV\n"
-                            << "Peak states: " << r.peak << "\nTransitions: " << r.transitions
-                            << "\nCompleted candidates: " << r.completed << '/' << r.candidates
-                            << "\nFinal order: " << r.order << "\nSolve time: " << r.elapsed
-                            << " seconds\nDominated states: " << r.dominated << '\n';
-                    } else {
-                        cout << "Algorithm: " << algorithm
-                            << "\nStatus: heuristic\nUpper bound clicks: " << heuristic.clicks
-                            << '\n';
-                    }
-                    if (witness) {
-                        for (auto a : actions) {
-                            cout << "Action: " << a.kind << ' ' << a.cell % b.w << ' '
-                                << a.cell / b.w << '\n';
+                        if (all) {
+                            csv_result.eight_way = eight.clicks;
+                            csv_result.lzini = legacy.lzini.clicks;
+                            csv_result.hzini = legacy.hzini.clicks;
                         }
-                    }
+                        csv_writer.add_result(csv_result);
+                        break;
+                    default:
+                        cout << "Board: " << static_cast<unsigned>(b.w) << 'x' << static_cast<unsigned>(b.h) << ", " << b.mineCount()
+                            << " mines\nURL: " << b.url() << "\n3BV: " << b.bv() << '\n';
+                        if (isExact) {
+                            const auto &r = exact;
+                            const auto &c = r.breakdown;
+                            cout << "Candidates: " << r.candidates << " (removed " << r.removed
+                                << ")\nDP: " << r.order << "\nEngine: " << r.engine << '\n'
+                                << "Status: "
+                                << (r.exact ? "optimal" : "resource limit: " + r.reason) << '\n'
+                                << (r.exact ? "Optimal clicks: " : "Upper bound clicks: ")
+                                << r.clicks << '\n'
+                                << "Breakdown: " << c[0] << " flags + " << c[1] << " chords + "
+                                << c[2] << " chains + " << c[3] << " remaining 3BV\n"
+                                << "Peak states: " << r.peak << "\nTransitions: " << r.transitions
+                                << "\nCompleted candidates: " << r.completed << '/' << r.candidates
+                                << "\nFinal order: " << r.order << "\nSolve time: " << r.elapsed
+                                << " seconds\nDominated states: " << r.dominated << '\n';
+                        } else {
+                            cout << "Algorithm: " << algorithm
+                                << "\nStatus: heuristic\nUpper bound clicks: " << heuristic.clicks
+                                << '\n';
+                        }
+                        if (witness) {
+                            for (auto a : actions) {
+                                cout << "Action: " << a.kind << ' ' << a.cell % b.w << ' '
+                                    << a.cell / b.w << '\n';
+                            }
+                        }
+                        break;
                 }
                 write_time_elapsed += seconds(start_output);
                 if (run < runs) {
@@ -495,7 +507,7 @@ int main(int argc, char **argv) {
                 }
             }
             end_runs = seconds(start_runs) - write_time_elapsed;
-            if (json) {
+            if (output_format == Formats::JSON) {
                 json_metadata.elapsed_time = end_runs;
                 json_writer.update_metadata(json_metadata);
             }

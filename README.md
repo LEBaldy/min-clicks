@@ -50,7 +50,7 @@ The CLI accepts any URL with compatible `b`/`m` parameters, or `b=...&m=...`.
 Random dimensions are 1–99 and mine counts 0–width×height.
 Seeds are unsigned 32-bit integers by default. Add `--64b` to `--random`/`--randomruns` to use `mt19937_64` and unsigned 64-bit seeds.
 
-`--rng-load FILENAME` can be used with any of the previous options to load the rng_state from `FILENAME`. This will overwrite the url, encoded string, and seed of `--random`/`--randomruns`. It will automatially determine whether to use 32-bit or 64-bit rng state based on the file contents.
+`--rng-load FILENAME` can be used with any of the previous options to load the rng_state from `FILENAME`. This will overwrite the url, encoded string, and seed of `--random`/`--randomruns`. It will automatically determine whether to use 32-bit or 64-bit rng state based on the file contents.
 `--rng-save FILENAME` can be used to save the rng_state to `FILENAME` after the run. This is useful for reproducing a random board. This file may be device dependant, so it is recommended to use the same architecture, and preferably machine, for loading and saving.
 
 There are **no default time or state limits**. Explicit `--time-limit SECONDS` and `--max-states N` are available; zero means unlimited.
